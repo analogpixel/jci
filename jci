@@ -1,0 +1,169 @@
+#!/bin/bash
+
+
+help_text() {
+  local -r script_name="$(basename "$0")"
+
+  cat <<HELP
+jci (jump ci) is a program that opens the correct jenkins ci job for the directory you are
+in, or for the file you specify.  it's almost like https://media.giphy.com/media/12NUbkX6p4xOO4/giphy.gif
+
+USAGE
+  ${script_name} [-h|--help]
+
+OPTIONS
+  -d, --debug   Print debugging messages
+  -h, --help    Print this message then exit
+
+EXAMPLES
+
+  # change to a directory and just run the command
+  # the default is to check the current directory
+  ${script_name} 
+
+  # if the directory is full of files that probably
+  # all have their own ci jobs then supply a file name
+  ${script_name} <filename>
+
+  # Are you a good person? Sure you are, that's why
+  # you are now reading how to ADD an entry
+
+  # by default it'll just add the directory you are in
+  ${script_name} add 
+
+  # but you can also add a file of the directory you are in
+  $_script_name} add <filename>
+
+  # you'll then be prompted for the URL of the ci job and a short description.
+  # thanks for being a good person.
+
+AUTHORS
+  analogpixel (matt.poepping@gmail.com)
+HELP
+}
+
+debug() {
+  if [[ -n "${debug-}" ]]; then
+    printf "$@\n" >&2
+  fi
+}
+
+
+main() {
+
+  if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "Must be run from git repo"
+    exit 1
+  fi
+
+  root="`git rev-parse --show-toplevel`"
+  cidoc="${root}/.ci"
+
+  if [ ! -f "${cidoc}" ] ; then
+    touch "${cidoc}"
+  fi
+
+  if [ "$root" = $PWD ] ; then
+    doc=""
+  else
+    doc="`echo $PWD | sed \"s!${root}!!g\"`"
+  fi
+
+  while [[ "$#" -gt 0 ]]; do
+    arg="$1"
+    shift
+
+    case "${arg}" in
+      -d|--debug)
+        local -r debug=yes
+        ;;
+
+      -h|--help|help)
+        help_text
+        exit 0
+        ;;
+
+      ls)
+        cat ${cidoc} | grep "^${doc}" | awk -F"!" {'print $1'}
+        exit 0
+        ;;
+
+      rm)
+        # remove an entry
+        if [ -z "$1" ] ; then
+          debug "Just remove dir ${doc}"
+        else
+          doc="${doc}/$1"
+          debug "remove file ${doc}"
+        fi
+
+        read -p "Are you sure you want to delete ${doc} (Y/N)? " -n 1 -r
+        echo
+
+        if [[  $REPLY =~ ^[Yy]$ ]] ; then
+          if [ -n "$doc" ] ; then
+            echo "Remove $doc"
+            cat ${cidoc} | grep -v "^${doc}!" > /tmp/_jci.tmp
+            mv /tmp/_jci.tmp ${cidoc}
+          fi
+        fi
+        exit 0
+        ;;
+
+      add)
+        # add a new entry 
+        if [ -z "$1" ] ; then
+          echo "Just add dir ${doc}"
+        else
+          doc="${doc}/$1"
+          echo "Add file ${doc}"
+        fi
+      
+        read -e -p "URL to CI job for ${doc}:" URL
+        read -e -p "Short Description:" DESC
+        echo "${doc}!${URL}!${DESC}" >> ${cidoc}
+        echo "Entry Added to ${cidoc}"
+        exit 0
+        ;;
+
+      *)
+        # if you are searching for a file this is where the magic happens
+        doc="${doc}/${arg}"
+        ;;
+    esac
+  done
+
+  if [ -z "${doc}" ] ; then
+    doc="/"
+  fi
+
+  debug "Doc is: ${doc}"
+  # check for an exact match
+  url=$(cat ${cidoc} | egrep "${doc}!.*!.*$" | awk -F"!" {'print $2'})
+  
+  # if no match is found the start stripping off a section at a time
+  # until we get to root
+  if [ -z "${url}" ] ; then
+    debug "start with: ${doc}"
+    # strip off a section at a time until we find a match or get to root
+    while [ -z "${url}" -a  -n "${doc}" ] ; do
+      doc=${doc%/*} 
+      url=$(cat ${cidoc} | egrep "^${doc}!.*!.*$" | awk -F"!" {'print $2'})
+      debug "strip to: ${doc}"
+    done
+
+  fi
+
+  # if we get this far with a valid URL, then open it in your browser
+  if [ -n "${url}" ] ; then
+    open $url
+  else
+    # don't be that person that just takes takes takes, give back then next person will :heart: you for it
+    echo "Nothing found; figure out the correct ci and run: \"$(basename $0) add\" or \"$(basename $0) add <filename>\""
+  fi
+
+}
+
+# If the script is cat into ssh, $BASH_SOURCE isn't set. We default
+# to $0 so the script will actually run
+[[ "$0" == "${BASH_SOURCE:-$0}" ]] && main "$@"
