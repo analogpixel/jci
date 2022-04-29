@@ -14,6 +14,11 @@ USAGE
 OPTIONS
   -d, --debug   Print debugging messages
   -h, --help    Print this message then exit
+  add           adds ci info to the curent directory
+  add <file>    adds ci info to the file in the current directory
+  rm            removes ci info from the current directory
+  rm <file>     removes ci info from file in the current directory
+  ls            list defined ci info in current directory
 
 EXAMPLES
 
